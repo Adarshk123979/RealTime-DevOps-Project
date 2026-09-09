@@ -1,46 +1,67 @@
 pipeline {
     agent any
 
+    environment {
+        IMAGE_NAME = "adarshdevops2026/flask-app:latest"
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
-                echo 'Source code checked out successfully.'
+                checkout scm
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t flask-app:v1 .'
+                sh 'docker build -t $IMAGE_NAME .'
             }
         }
 
-        stage('Remove Old Container') {
+        stage('Docker Hub Login') {
             steps {
-                sh 'docker rm -f flask-container || true'
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    '''
+                }
             }
         }
 
-        stage('Run Container') {
+        stage('Push Docker Image') {
             steps {
-                sh 'docker run -d -p 5000:5000 --name flask-container flask-app:v1'
+                sh 'docker push $IMAGE_NAME'
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh 'kubectl apply -f deployment.yaml'
+                sh 'kubectl apply -f service.yaml'
+                sh 'kubectl rollout restart deployment flask-deployment'
             }
         }
 
         stage('Verify') {
             steps {
-                sh 'docker ps'
+                sh 'kubectl get pods'
+                sh 'kubectl get svc'
             }
         }
     }
 
     post {
         success {
-            echo 'Pipeline executed successfully!'
+            echo 'CI/CD Pipeline Executed Successfully!'
         }
 
         failure {
-            echo 'Pipeline failed!'
+            echo 'Pipeline Failed!'
         }
     }
 }
